@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whatsapp-client"
+version = "0.1.0"
+description = "Cliente WhatsApp Business (Graph API da Meta) — transport puro, extraído do backend_whatsapp Z1"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.32.0",
+    "structlog>=23.0.0",
+]
+
+# Peer dependency (NÃO listada em dependencies de propósito): a lib usa
+# z1monitoring_models.models.messages.MessageWpp e
+# z1monitoring_models.models.waid_messageid_rel.TemplateMessageIdRel para
+# persistir/correlacionar mensagens. O consumidor já instala
+# `z1monitoring-models` via git+ssh (mesmo padrão do backend_whatsapp), então
+# declará-la aqui só duplicaria a resolução SSH. Mantida como peer.
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["whatsapp_client*"]
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+line_length = 120
