@@ -319,8 +319,18 @@ def send_buttons(channel, phone_number, message, buttons, footer_text="Escolha u
             MessageWpp(data, phone_number, channel, wamid=wamid, status="sent")
 
 
-def send_list(channel, phone_number, message, rows, footer_text="Escolha uma opção"):
-
+def send_list(
+    channel,
+    phone_number,
+    message,
+    rows,
+    footer_text="Escolha uma opção",
+    button_text="Escolher",
+    section_title=None,
+):
+    # button_text / footer_text / section_title são textos de UI da lista.
+    # Defaults em PT por retrocompat; o app (presenter) passa traduzidos por
+    # idioma. A lib não decide idioma — só transporta o que recebe.
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
     log.info(f"Sending list message to {phone_number}: {message}")
@@ -356,8 +366,8 @@ def send_list(channel, phone_number, message, rows, footer_text="Escolha uma op�
                 "body": {"text": message},
                 "footer": {"text": footer_text},
                 "action": {
-                    "button": "Escolher",
-                    "sections": [{"title": "Escolha uma opção", "rows": buttons_payload}],
+                    "button": button_text,
+                    "sections": [{"title": section_title or footer_text, "rows": buttons_payload}],
                 },
             },
         }
