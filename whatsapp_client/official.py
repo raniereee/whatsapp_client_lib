@@ -632,6 +632,78 @@ def send_document(channel, phone_number, message, document_url):
         MessageWpp(data, phone_number, channel, wamid=wamid, status="sent")
 
 
+def send_document_upload(channel, phone_number, message, file_path, mime="application/pdf"):
+    """Envia documento (PDF, XLSX) via UPLOAD direto para a Meta (media_id).
+
+    Análogo a send_image_upload: o arquivo NÃO precisa estar numa URL pública —
+    sobe pra Media API e envia pelo media_id. Use para conteúdo privado (ex.:
+    relatório com dados do produtor) que não deve ficar hospedado publicamente.
+
+    1. Upload do arquivo para a Media API -> media_id
+    2. Envia a mensagem 'document' com o media_id
+    """
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    file_name = file_path.split("/")[-1]
+    log.info(f"Uploading document to Meta: {file_path}")
+    wamid = None
+    data = {}
+
+    try:
+        # 1. Upload do arquivo
+        upload_url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/media"
+        headers = {"Authorization": f"Bearer {META_API_KEY}"}
+
+        with open(file_path, "rb") as f:
+            files = {
+                "file": (file_name, f, mime),
+            }
+            form_data = {
+                "messaging_product": "whatsapp",
+                "type": mime,
+            }
+            upload_response = requests.post(upload_url, headers=headers, files=files, data=form_data)
+            upload_response.raise_for_status()
+            upload_json = upload_response.json()
+
+        media_id = upload_json.get("id")
+        if not media_id:
+            log.error(f"Falha no upload do documento: {upload_json}")
+            return
+
+        # 2. Envia mensagem com media_id
+        msg_url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": phone_number,
+            "type": "document",
+            "document": {"id": media_id, "caption": message, "filename": file_name},
+        }
+        headers = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(msg_url, headers=headers, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+
+    except Exception as e:
+        log.error(
+            "send_document_upload_error",
+            error=str(e),
+            phone=phone_number,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+
+    finally:
+        MessageWpp(data, phone_number, channel, wamid=wamid, status="sent")
+
+
 def send_contacts(channel, phone_number, contacts):
     """
     Envia contatos via WhatsApp Business API.
