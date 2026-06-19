@@ -19,11 +19,15 @@ class Message:
     msg_type = None
     flow_token = None
     flow_response_json = None
+    bsuid = None
 
 
 def decode_msg(infos):
     m = Message()
     m.msisdn = infos.get("from")
+    # BSUID (Business-Scoped User ID da Meta): identidade resiliente quando
+    # o número (`from`) vier ausente ou como BSUID. Fase 1.
+    m.bsuid = infos.get("from_user_id")
     m.msg_type = infos.get("type")
     waid = infos.get("id")
     if m.msg_type == "text":
