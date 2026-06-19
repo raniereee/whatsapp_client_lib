@@ -441,6 +441,55 @@ def send_text_message(phone_number, channel, message):
         MessageWpp(data, phone_number, channel, wamid=wamid, status="sent")
 
 
+def send_text_message_by_bsuid(bsuid, channel, message):
+    """Envia texto usando o BSUID (Business-Scoped User ID) no campo
+    `recipient`, em vez do telefone no `to`. Usar quando só houver o BSUID —
+    a Meta parou de mandar o número (rollout de usernames). Método separado
+    de propósito: não toca o send_text_message por telefone, pra não quebrar
+    os fluxos existentes. Ver doc Meta business-scoped-user-ids."""
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    log.info(f"Sending text message to BSUID {bsuid}: {message}")
+    wamid = None
+    data = None
+    try:
+        url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "recipient": bsuid,
+            "type": "text",
+            "text": {
+                "body": message,
+            },
+        }
+        HEADERS = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(url, headers=HEADERS, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+
+    except Exception as e:
+        log.error(
+            "send_text_message_by_bsuid_error",
+            error=str(e),
+            bsuid=bsuid,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+
+    finally:
+        if data:
+            # Auditoria: grava o bsuid como identificador do destinatário
+            # (não há telefone neste caminho).
+            MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+
+
 def send_image(channel, phone_number, message, image_url):
 
     WAPP_NUMBER_ID = channel
