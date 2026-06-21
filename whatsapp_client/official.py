@@ -21,9 +21,24 @@ class Message:
     flow_response_json = None
     bsuid = None
     image_id = None
+    image_mime = None
     document_id = None
+    document_mime = None
     file_name = None
     audio_id = None
+    audio_mime = None
+    video_id = None
+    video_mime = None
+    sticker_id = None
+    sticker_mime = None
+    sticker_animated = False
+    reaction_emoji = None
+    reacted_wamid = None
+    latitude = None
+    longitude = None
+    location_name = None
+    location_address = None
+    contacts = None
 
 
 def decode_msg(infos):
@@ -86,19 +101,50 @@ def decode_msg(infos):
     elif m.msg_type == "image":
         image_info = infos.get("image", {})
         m.image_id = image_info.get("id")
+        m.image_mime = image_info.get("mime_type")
         m.text = image_info.get("caption", "")
 
     elif m.msg_type == "document":
         doc_info = infos.get("document", {})
         m.document_id = doc_info.get("id")
+        m.document_mime = doc_info.get("mime_type")
         m.text = doc_info.get("caption", "")
         m.file_name = doc_info.get("filename", "")
 
     elif m.msg_type == "video":
-        m.text = infos.get("caption")
+        video_info = infos.get("video", {})
+        m.video_id = video_info.get("id")
+        m.video_mime = video_info.get("mime_type")
+        m.text = video_info.get("caption") or infos.get("caption")
 
     elif m.msg_type == "audio":
-        m.audio_id = infos.get("audio", {}).get("id")
+        audio_info = infos.get("audio", {})
+        m.audio_id = audio_info.get("id")
+        m.audio_mime = audio_info.get("mime_type")
+
+    elif m.msg_type == "sticker":
+        sticker_info = infos.get("sticker", {})
+        m.sticker_id = sticker_info.get("id")
+        m.sticker_mime = sticker_info.get("mime_type")
+        m.sticker_animated = sticker_info.get("animated", False)
+
+    elif m.msg_type == "reaction":
+        # Reação (emoji) a uma mensagem anterior. reacted_wamid = a mensagem
+        # reagida; emoji vazio quando o usuário REMOVE a reação.
+        reaction_info = infos.get("reaction", {})
+        m.reaction_emoji = reaction_info.get("emoji")
+        m.reacted_wamid = reaction_info.get("message_id")
+        m.text = reaction_info.get("emoji")
+
+    elif m.msg_type == "location":
+        loc = infos.get("location", {})
+        m.latitude = loc.get("latitude")
+        m.longitude = loc.get("longitude")
+        m.location_name = loc.get("name")
+        m.location_address = loc.get("address")
+
+    elif m.msg_type == "contacts":
+        m.contacts = infos.get("contacts", [])
 
     m.chat_id = m.msisdn
     m.channel = infos.get("phone_number_channel")
