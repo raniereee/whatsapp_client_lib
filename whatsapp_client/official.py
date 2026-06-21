@@ -927,6 +927,367 @@ def send_contacts(channel, phone_number, contacts):
             MessageWpp(data, phone_number, channel, wamid=wamid, status="sent")
 
 
+# --- Variantes por BSUID das mensagens de conteúdo. Endereçam pelo campo
+# `recipient` (BSUID) em vez de `to` (telefone) e gravam a conversa pelo BSUID
+# (chave de identidade). Migração BSUID: abandonar o endereçamento por telefone.
+
+
+def send_list_by_bsuid(
+    bsuid,
+    channel,
+    message,
+    rows,
+    footer_text="Escolha uma opção",
+    button_text="Escolher",
+    section_title=None,
+):
+    """Como send_list, mas endereça pelo BSUID (campo `recipient`)."""
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    log.info(f"Sending list to BSUID {bsuid}: {message}")
+    META_LIST_MAX_ROWS = 10
+    META_LIST_TITLE_MAX = 24
+    if len(rows) > META_LIST_MAX_ROWS:
+        log.warning(
+            "send_list_by_bsuid truncando rows acima do limite Meta",
+            total=len(rows),
+            cap=META_LIST_MAX_ROWS,
+            bsuid=bsuid,
+        )
+        rows = rows[:META_LIST_MAX_ROWS]
+    buttons_payload = []
+    for row in rows:
+        title = row if len(row) <= META_LIST_TITLE_MAX else row[: META_LIST_TITLE_MAX - 1] + "…"
+        buttons_payload.append({"id": uuid.uuid4().hex, "title": title})
+
+    wamid = None
+    data = None
+    try:
+        url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "recipient": bsuid,
+            "type": "interactive",
+            "interactive": {
+                "type": "list",
+                "body": {"text": message},
+                "footer": {"text": footer_text},
+                "action": {
+                    "button": button_text,
+                    "sections": [{"title": section_title or footer_text, "rows": buttons_payload}],
+                },
+            },
+        }
+        HEADERS = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(url, headers=HEADERS, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+
+    except Exception as e:
+        log.error(
+            "send_list_by_bsuid_error",
+            error=str(e),
+            bsuid=bsuid,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+
+    finally:
+        if data:
+            MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+
+
+def send_image_by_bsuid(bsuid, channel, message, image_url):
+    """Como send_image, mas endereça pelo BSUID (campo `recipient`)."""
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    log.info(f"Sending image to BSUID {bsuid}: {message} - image_url: {image_url}")
+    wamid = None
+    data = None
+    try:
+        url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "recipient": bsuid,
+            "type": "image",
+            "image": {"link": image_url, "caption": message},
+        }
+        HEADERS = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(url, headers=HEADERS, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+
+    except Exception as e:
+        log.error(
+            "send_image_by_bsuid_error",
+            error=str(e),
+            bsuid=bsuid,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+
+    finally:
+        if data:
+            MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+
+
+def send_image_upload_by_bsuid(bsuid, channel, message, file_path):
+    """Como send_image_upload, mas endereça pelo BSUID. Fallback pro link via
+    send_image_by_bsuid."""
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    log.info(f"Uploading image to Meta (BSUID {bsuid}): {file_path}")
+    wamid = None
+    data = {}
+    try:
+        upload_url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/media"
+        headers = {"Authorization": f"Bearer {META_API_KEY}"}
+        with open(file_path, "rb") as f:
+            files = {"file": (file_path.split("/")[-1], f, "image/png")}
+            form_data = {"messaging_product": "whatsapp", "type": "image/png"}
+            upload_response = requests.post(upload_url, headers=headers, files=files, data=form_data)
+            upload_response.raise_for_status()
+            upload_json = upload_response.json()
+
+        media_id = upload_json.get("id")
+        if not media_id:
+            log.error(f"Falha no upload da imagem: {upload_json}")
+            return send_image_by_bsuid(
+                bsuid, channel, message, f"https://img.monitora.pro/space/{file_path.split('/')[-1]}"
+            )
+
+        msg_url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "recipient": bsuid,
+            "type": "image",
+            "image": {"id": media_id, "caption": message},
+        }
+        headers = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(msg_url, headers=headers, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+
+    except Exception as e:
+        log.error(
+            "send_image_upload_by_bsuid_error",
+            error=str(e),
+            bsuid=bsuid,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+        return send_image_by_bsuid(
+            bsuid, channel, message, f"https://img.monitora.pro/space/{file_path.split('/')[-1]}"
+        )
+
+    finally:
+        MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+
+
+def send_audio_by_bsuid(bsuid, channel, audio_url):
+    """Como send_audio, mas endereça pelo BSUID (campo `recipient`)."""
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    log.info(f"Sending audio to BSUID {bsuid} - audio_url: {audio_url}")
+    wamid = None
+    data = None
+    try:
+        url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "recipient": bsuid,
+            "type": "audio",
+            "audio": {"link": audio_url},
+        }
+        HEADERS = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(url, headers=HEADERS, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+
+    except Exception as e:
+        log.error(
+            "send_audio_by_bsuid_error",
+            error=str(e),
+            bsuid=bsuid,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+
+    finally:
+        if data:
+            MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+
+
+def send_document_by_bsuid(bsuid, channel, message, document_url):
+    """Como send_document, mas endereça pelo BSUID (campo `recipient`)."""
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    file_name = document_url.split("/")[-1]
+    log.info(f"Sending document to BSUID {bsuid}: {message} - url: {document_url}")
+    wamid = None
+    data = None
+    try:
+        url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "recipient": bsuid,
+            "type": "document",
+            "document": {
+                "link": document_url,
+                "caption": message,
+                "filename": file_name,
+            },
+        }
+        HEADERS = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(url, headers=HEADERS, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+
+    except Exception as e:
+        log.error(
+            "send_document_by_bsuid_error",
+            error=str(e),
+            bsuid=bsuid,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+
+    finally:
+        if data:
+            MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+
+
+def send_document_upload_by_bsuid(bsuid, channel, message, file_path, mime="application/pdf"):
+    """Como send_document_upload, mas endereça pelo BSUID (campo `recipient`)."""
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    file_name = file_path.split("/")[-1]
+    log.info(f"Uploading document to Meta (BSUID {bsuid}): {file_path}")
+    wamid = None
+    data = {}
+    try:
+        upload_url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/media"
+        headers = {"Authorization": f"Bearer {META_API_KEY}"}
+        with open(file_path, "rb") as f:
+            files = {"file": (file_name, f, mime)}
+            form_data = {"messaging_product": "whatsapp", "type": mime}
+            upload_response = requests.post(upload_url, headers=headers, files=files, data=form_data)
+            upload_response.raise_for_status()
+            upload_json = upload_response.json()
+
+        media_id = upload_json.get("id")
+        if not media_id:
+            log.error(f"Falha no upload do documento: {upload_json}")
+            return
+
+        msg_url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "recipient": bsuid,
+            "type": "document",
+            "document": {"id": media_id, "caption": message, "filename": file_name},
+        }
+        headers = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(msg_url, headers=headers, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+
+    except Exception as e:
+        log.error(
+            "send_document_upload_by_bsuid_error",
+            error=str(e),
+            bsuid=bsuid,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+
+    finally:
+        MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+
+
+def send_contacts_by_bsuid(bsuid, channel, contacts):
+    """Como send_contacts, mas endereça pelo BSUID (campo `recipient`)."""
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    log.info(f"Sending contacts to BSUID {bsuid}: {contacts}")
+    wamid = None
+    data = None
+    try:
+        url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "recipient": bsuid,
+            "type": "contacts",
+            "contacts": contacts,
+        }
+        HEADERS = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(url, headers=HEADERS, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+
+    except Exception as e:
+        log.error(
+            "send_contacts_by_bsuid_error",
+            error=str(e),
+            bsuid=bsuid,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+
+    finally:
+        if data:
+            MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+
+
 def send_flow_template(
     channel,
     msisdn,
