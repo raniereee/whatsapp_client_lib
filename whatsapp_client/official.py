@@ -446,7 +446,10 @@ def send_text_message_by_bsuid(bsuid, channel, message):
     `recipient`, em vez do telefone no `to`. Usar quando só houver o BSUID —
     a Meta parou de mandar o número (rollout de usernames). Método separado
     de propósito: não toca o send_text_message por telefone, pra não quebrar
-    os fluxos existentes. Ver doc Meta business-scoped-user-ids."""
+    os fluxos existentes. Ver doc Meta business-scoped-user-ids.
+
+    O BSUID é a chave de identidade gravada em messages_wpp (a correlação
+    BSUID<->telefone e a exibição são resolvidas na leitura)."""
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
     log.info(f"Sending text message to BSUID {bsuid}: {message}")
@@ -485,8 +488,126 @@ def send_text_message_by_bsuid(bsuid, channel, message):
 
     finally:
         if data:
-            # Auditoria: grava o bsuid como identificador do destinatário
-            # (não há telefone neste caminho).
+            # O BSUID é a chave de identidade da conversa.
+            MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+
+
+def send_template_by_bsuid(bsuid, channel, template_id, values, messageid=None):
+    """Como send_template, mas endereça pelo BSUID (campo `recipient`) em vez
+    do telefone (`to`). Usar quando o destinatário só tem BSUID. O BSUID é a
+    chave de identidade gravada em messages_wpp."""
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    log.info(f"Sending template to BSUID {bsuid}: {template_id}")
+    values_payload = []
+    for value in values:
+        values_payload.append({"type": "text", "text": value})
+
+    wamid = None
+    data = None
+    try:
+        url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "recipient": bsuid,
+            "type": "template",
+            "template": {
+                "name": template_id,
+                "language": {"code": "pt_BR"},
+                "components": [{"type": "body", "parameters": values_payload}],
+            },
+        }
+        HEADERS = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(url, headers=HEADERS, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+
+            if messageid:
+                TemplateMessageIdRel(messageid, wamid)
+
+    except Exception as e:
+        log.error(
+            "send_template_by_bsuid_error",
+            error=str(e),
+            bsuid=bsuid,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+
+    finally:
+        if data:
+            MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+
+
+def send_buttons_by_bsuid(bsuid, channel, message, buttons, footer_text="Escolha uma opção"):
+    """Como send_buttons, mas endereça pelo BSUID (campo `recipient`). O BSUID
+    é a chave de identidade gravada em messages_wpp."""
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    log.info(f"Sending buttons to BSUID {bsuid}: {message}")
+    buttons_payload = []
+    for i, button in enumerate(buttons):
+        if isinstance(button, str):
+            btn_id = f"btn_{i}"
+            btn_title = button[:20]  # limite de 20 chars da API Meta
+        else:
+            btn_id = button.get("id", f"btn_{i}")
+            btn_title = button.get("title", "")[:20]
+        buttons_payload.append(
+            {
+                "type": "reply",
+                "reply": {
+                    "id": btn_id,
+                    "title": btn_title,
+                },
+            }
+        )
+
+    wamid = None
+    data = None
+    try:
+        url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "recipient": bsuid,
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {"text": message},
+                "footer": {"text": footer_text},
+                "action": {"buttons": buttons_payload},
+            },
+        }
+        HEADERS = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(url, headers=HEADERS, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+
+    except Exception as e:
+        log.error(
+            "send_buttons_by_bsuid_error",
+            error=str(e),
+            bsuid=bsuid,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+
+    finally:
+        if data:
             MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
 
 
