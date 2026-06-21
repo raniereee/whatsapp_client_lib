@@ -20,6 +20,10 @@ class Message:
     flow_token = None
     flow_response_json = None
     bsuid = None
+    image_id = None
+    document_id = None
+    file_name = None
+    audio_id = None
 
 
 def decode_msg(infos):
@@ -78,6 +82,17 @@ def decode_msg(infos):
         button_info = infos.get("button", {})
         m.text = button_info.get("text", "")
         m.unique_id = TemplateMessageIdRel.load(waid)
+
+    elif m.msg_type == "image":
+        image_info = infos.get("image", {})
+        m.image_id = image_info.get("id")
+        m.text = image_info.get("caption", "")
+
+    elif m.msg_type == "document":
+        doc_info = infos.get("document", {})
+        m.document_id = doc_info.get("id")
+        m.text = doc_info.get("caption", "")
+        m.file_name = doc_info.get("filename", "")
 
     elif m.msg_type == "video":
         m.text = infos.get("caption")
