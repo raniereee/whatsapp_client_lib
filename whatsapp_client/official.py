@@ -93,10 +93,15 @@ def decode_msg(infos):
                 m.flow_token = None
 
     elif m.msg_type == "button":
-        # Resposta de botão de template - extrair texto e payload
+        # Resposta de botão de TEMPLATE. A correlação é pela mensagem RESPONDIDA
+        # (context.id) — não pelo id deste clique (infos["id"]). O context.id é o
+        # wamid do template enviado, gravado em TemplateMessageIdRel no send. E
+        # load() devolve o registro: usamos o .messageid (o unique_id do alarme).
         button_info = infos.get("button", {})
         m.text = button_info.get("text", "")
-        m.unique_id = TemplateMessageIdRel.load(waid)
+        ctx_id = (infos.get("context") or {}).get("id")
+        rel = TemplateMessageIdRel.load(ctx_id) if ctx_id else None
+        m.unique_id = rel.messageid if rel else None
 
     elif m.msg_type == "image":
         image_info = infos.get("image", {})
