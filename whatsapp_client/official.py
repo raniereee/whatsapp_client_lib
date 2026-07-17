@@ -197,8 +197,11 @@ def mark_message_read(message_id, channel):
         "Authorization": f"Bearer {META_API_KEY}",
         "Content-Type": "application/json",
     }
-    # Salva com wamid extraído do message_id
-    MessageWpp(data, channel, channel, wamid=message_id, status="read")
+    # NÃO persiste nada aqui: marcar como lida é uma ação outbound pra API da
+    # Meta, não uma mensagem. Gravar um MessageWpp com msisdn=channel (o
+    # phone_number_id) criava uma "conversa fantasma" keyed no número da Z1,
+    # cheia de payloads de read (sem texto). O read dos nossos envios já é
+    # rastreado pelo webhook de statuses → MessageWpp.update_status_by_wamid.
     try:
         response = requests.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
