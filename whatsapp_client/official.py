@@ -10,6 +10,13 @@ from z1monitoring_models.models.waid_messageid_rel import TemplateMessageIdRel
 log = structlog.get_logger()
 
 
+def _resolve_channel(channel):
+    """Normaliza o channel para o phone_number_id canônico via
+    config.CHANNEL_ALIASES (injetado pelo app). Sem alias, retorna o próprio
+    channel — então é seguro chamar em qualquer método de envio."""
+    return config.CHANNEL_ALIASES.get(channel, channel)
+
+
 class Message:
     msisdn = "(48) 98833-1991"
     text = "1"
@@ -329,6 +336,7 @@ def location_request(channel, phone_number, msg):
 
 
 def send_buttons(channel, phone_number, message, buttons, footer_text="Escolha uma opção"):
+    channel = _resolve_channel(channel)
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
     log.info(f"Sending buttons message to {phone_number}: {message}")
@@ -470,7 +478,7 @@ def send_list(
 
 
 def send_text_message(phone_number, channel, message):
-
+    channel = _resolve_channel(channel)
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
     log.info(f"Sending text message to {phone_number}: {message}")
@@ -519,6 +527,7 @@ def send_text_message_by_bsuid(bsuid, channel, message):
 
     O BSUID é a chave de identidade gravada em messages_wpp (a correlação
     BSUID<->telefone e a exibição são resolvidas na leitura)."""
+    channel = _resolve_channel(channel)
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
     log.info(f"Sending text message to BSUID {bsuid}: {message}")
@@ -565,6 +574,7 @@ def send_template_by_bsuid(bsuid, channel, template_id, values, messageid=None):
     """Como send_template, mas endereça pelo BSUID (campo `recipient`) em vez
     do telefone (`to`). Usar quando o destinatário só tem BSUID. O BSUID é a
     chave de identidade gravada em messages_wpp."""
+    channel = _resolve_channel(channel)
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
     log.info(f"Sending template to BSUID {bsuid}: {template_id}")
@@ -618,6 +628,7 @@ def send_template_by_bsuid(bsuid, channel, template_id, values, messageid=None):
 def send_buttons_by_bsuid(bsuid, channel, message, buttons, footer_text="Escolha uma opção"):
     """Como send_buttons, mas endereça pelo BSUID (campo `recipient`). O BSUID
     é a chave de identidade gravada em messages_wpp."""
+    channel = _resolve_channel(channel)
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
     log.info(f"Sending buttons to BSUID {bsuid}: {message}")
@@ -1455,6 +1466,7 @@ def send_flow_template(
 
 
 def send_template(channel, msisdn, template_id, values, messageid=None):
+    channel = _resolve_channel(channel)
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
     log.info(f"Sending template message to {msisdn}: {values}")
