@@ -570,7 +570,24 @@ def send_text_message_by_bsuid(bsuid, channel, message):
             MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
 
 
-def send_template_by_bsuid(bsuid, channel, template_id, values, messageid=None):
+def _template_components(values_payload, header_image=None):
+    """Componentes do template. `header_image` e a URL publica de um template
+    cujo header e do tipo IMAGE — a imagem NAO precisa de aprovacao (so a
+    estrutura do template e aprovada), entao pode ser diferente a cada envio.
+    Sem header_image o payload fica identico ao de antes."""
+    components = []
+    if header_image:
+        components.append({
+            "type": "header",
+            "parameters": [
+                {"type": "image", "image": {"link": header_image}}
+            ],
+        })
+    components.append({"type": "body", "parameters": values_payload})
+    return components
+
+
+def send_template_by_bsuid(bsuid, channel, template_id, values, messageid=None, header_image=None):
     """Como send_template, mas endereça pelo BSUID (campo `recipient`) em vez
     do telefone (`to`). Usar quando o destinatário só tem BSUID. O BSUID é a
     chave de identidade gravada em messages_wpp."""
@@ -594,7 +611,7 @@ def send_template_by_bsuid(bsuid, channel, template_id, values, messageid=None):
             "template": {
                 "name": template_id,
                 "language": {"code": "pt_BR"},
-                "components": [{"type": "body", "parameters": values_payload}],
+                "components": _template_components(values_payload, header_image),
             },
         }
         HEADERS = {
@@ -1465,7 +1482,7 @@ def send_flow_template(
     return wamid
 
 
-def send_template(channel, msisdn, template_id, values, messageid=None):
+def send_template(channel, msisdn, template_id, values, messageid=None, header_image=None):
     channel = _resolve_channel(channel)
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
@@ -1486,7 +1503,7 @@ def send_template(channel, msisdn, template_id, values, messageid=None):
             "template": {
                 "name": template_id,
                 "language": {"code": "pt_BR"},
-                "components": [{"type": "body", "parameters": values_payload}],
+                "components": _template_components(values_payload, header_image),
             },
         }
         HEADERS = {
