@@ -1487,12 +1487,17 @@ def send_flow_template(
     return wamid
 
 
-def send_video(channel, msisdn, media_id, caption=""):
+def send_video(channel, msisdn, media_id, caption="", public_url=None):
     """Envia um video ja carregado (media id) na janela de 24h ABERTA.
 
     Sem template e sem custo de conversa — e o caminho preferido quando o
     produtor respondeu nas ultimas 24h. Fora da janela, o video tem de ir como
     header do template (send_template + header_video_id).
+
+    `public_url` nao vai para a Meta: e gravada em messages_wpp como
+    `media_public_url` para o chat de atendimento conseguir TOCAR o video. Sem
+    ela o front so tem o media_id, que exige token, e mostra "Video
+    indisponivel" — mesmo padrao ja usado para imagem recebida.
     """
     channel = _resolve_channel(channel)
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
@@ -1510,6 +1515,9 @@ def send_video(channel, msisdn, media_id, caption=""):
             "type": "video",
             "video": video,
         }
+        if public_url:
+            # Fora do payload da Meta, dentro do content que gravamos.
+            data["media_public_url"] = public_url
         response = requests.post(
             url,
             headers={"Authorization": f"Bearer {META_API_KEY}",
