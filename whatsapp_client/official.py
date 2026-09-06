@@ -1487,6 +1487,48 @@ def send_flow_template(
     return wamid
 
 
+def send_video(channel, msisdn, media_id, caption=""):
+    """Envia um video ja carregado (media id) na janela de 24h ABERTA.
+
+    Sem template e sem custo de conversa — e o caminho preferido quando o
+    produtor respondeu nas ultimas 24h. Fora da janela, o video tem de ir como
+    header do template (send_template + header_video_id).
+    """
+    channel = _resolve_channel(channel)
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    wamid = None
+    data = None
+    try:
+        url = f"{config.META_BASE_URL}/{channel}/messages"
+        video = {"id": media_id}
+        if caption:
+            video["caption"] = caption
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": msisdn,
+            "type": "video",
+            "video": video,
+        }
+        response = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {META_API_KEY}",
+                     "Content-Type": "application/json"},
+            json=data,
+        )
+        response.raise_for_status()
+        rj = response.json()
+        if rj.get("messages"):
+            wamid = rj["messages"][0].get("id")
+            data["id"] = wamid
+    except Exception as e:
+        log.error(f"send_video falhou para {msisdn}: {e}")
+    finally:
+        if data:
+            MessageWpp(data, msisdn, channel, wamid=wamid, status="sent")
+    return wamid
+
+
 def upload_media(channel, caminho, mime_type="video/mp4"):
     """Sobe um arquivo LOCAL para a Meta e devolve o media id.
 
