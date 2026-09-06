@@ -570,24 +570,29 @@ def send_text_message_by_bsuid(bsuid, channel, message):
             MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
 
 
-def _template_components(values_payload, header_image=None):
-    """Componentes do template. `header_image` e a URL publica de um template
-    cujo header e do tipo IMAGE — a imagem NAO precisa de aprovacao (so a
-    estrutura do template e aprovada), entao pode ser diferente a cada envio.
-    Sem header_image o payload fica identico ao de antes."""
+def _template_components(values_payload, header_image=None, header_video_id=None):
+    """Componentes do template. A midia do header NAO precisa de aprovacao (so a
+    estrutura do template e), entao pode ser diferente a cada envio.
+
+    `header_image` e URL publica. `header_video_id` e um MEDIA ID ja carregado
+    na Meta — video, ao contrario de imagem, nao vai por link: o video de alarme
+    mostra dados da granja do cliente, e uma URL publica ficaria legivel por
+    qualquer um que a tivesse. O media id e escopado ao numero que o enviou.
+
+    Sem nenhuma das duas o payload fica identico ao de antes."""
     components = []
-    if header_image:
-        components.append({
-            "type": "header",
-            "parameters": [
-                {"type": "image", "image": {"link": header_image}}
-            ],
-        })
+    midia = None
+    if header_video_id:
+        midia = {"type": "video", "video": {"id": header_video_id}}
+    elif header_image:
+        midia = {"type": "image", "image": {"link": header_image}}
+    if midia:
+        components.append({"type": "header", "parameters": [midia]})
     components.append({"type": "body", "parameters": values_payload})
     return components
 
 
-def send_template_by_bsuid(bsuid, channel, template_id, values, messageid=None, header_image=None):
+def send_template_by_bsuid(bsuid, channel, template_id, values, messageid=None, header_image=None, header_video_id=None):
     """Como send_template, mas endereça pelo BSUID (campo `recipient`) em vez
     do telefone (`to`). Usar quando o destinatário só tem BSUID. O BSUID é a
     chave de identidade gravada em messages_wpp."""
@@ -611,7 +616,7 @@ def send_template_by_bsuid(bsuid, channel, template_id, values, messageid=None, 
             "template": {
                 "name": template_id,
                 "language": {"code": "pt_BR"},
-                "components": _template_components(values_payload, header_image),
+                "components": _template_components(values_payload, header_image, header_video_id),
             },
         }
         HEADERS = {
@@ -1482,7 +1487,45 @@ def send_flow_template(
     return wamid
 
 
-def send_template(channel, msisdn, template_id, values, messageid=None, header_image=None):
+def upload_media(channel, caminho, mime_type="video/mp4"):
+    """Sobe um arquivo LOCAL para a Meta e devolve o media id.
+
+    Existe para o video de alarme: o arquivo e produzido pelo backend_plates e
+    fica no volume compartilhado (/home/ubuntu), entao quem tem o token da Meta
+    le do disco e sobe — sem URL publica no meio, que exporia dados da granja a
+    quem tivesse o link.
+
+    O media id e POR NUMERO (o upload vai no phone_number_id) e a Meta o mantem
+    por 30 dias. Devolve None quando falha; o chamador decide se envia sem
+    video ou desiste.
+    """
+    import os
+
+    channel = _resolve_channel(channel)
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    if not os.path.exists(caminho):
+        log.error(f"upload_media: arquivo inexistente {caminho}")
+        return None
+    try:
+        url = f"{config.META_BASE_URL}/{channel}/media"
+        with open(caminho, "rb") as f:
+            response = requests.post(
+                url,
+                headers={"Authorization": f"Bearer {META_API_KEY}"},
+                data={"messaging_product": "whatsapp", "type": mime_type},
+                files={"file": (os.path.basename(caminho), f, mime_type)},
+                timeout=300,
+            )
+        response.raise_for_status()
+        media_id = response.json().get("id")
+        log.info(f"upload_media: {caminho} -> {media_id} (canal {channel})")
+        return media_id
+    except Exception as e:
+        log.error(f"upload_media falhou para {caminho}: {e}")
+        return None
+
+
+def send_template(channel, msisdn, template_id, values, messageid=None, header_image=None, header_video_id=None):
     channel = _resolve_channel(channel)
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
@@ -1503,7 +1546,7 @@ def send_template(channel, msisdn, template_id, values, messageid=None, header_i
             "template": {
                 "name": template_id,
                 "language": {"code": "pt_BR"},
-                "components": _template_components(values_payload, header_image),
+                "components": _template_components(values_payload, header_image, header_video_id),
             },
         }
         HEADERS = {
