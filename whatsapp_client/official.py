@@ -752,12 +752,17 @@ def send_image(channel, phone_number, message, image_url):
         MessageWpp(data, phone_number, channel, wamid=wamid, status="sent")
 
 
-def send_image_upload(channel, phone_number, message, file_path):
+def send_image_upload(channel, phone_number, message, file_path, public_url=None):
     """
     Envia imagem via upload direto para Meta (mais confiável que link).
 
     1. Faz upload do arquivo para Media API
     2. Envia mensagem com o media_id
+
+    `public_url` não vai para a Meta: é gravada em messages_wpp como
+    `media_public_url` para o chat de atendimento conseguir EXIBIR a imagem.
+    Sem ela o front só tem o media_id, que exige token da Meta, e mostra
+    "Imagem indisponível" — mesmo padrão já usado no send_video.
     """
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
@@ -787,7 +792,10 @@ def send_image_upload(channel, phone_number, message, file_path):
             log.error(f"Falha no upload da imagem: {upload_json}")
             # Fallback para link
             return send_image(
-                channel, phone_number, message, f"https://img.monitora.pro/space/{file_path.split('/')[-1]}"
+                channel,
+                phone_number,
+                message,
+                public_url or f"https://img.monitora.pro/space/{file_path.split('/')[-1]}",
             )
 
         # 2. Envia mensagem com media_id
@@ -819,10 +827,18 @@ def send_image_upload(channel, phone_number, message, file_path):
             response=getattr(getattr(e, "response", None), "text", ""),
         )
         # Fallback para link
-        return send_image(channel, phone_number, message, f"https://img.monitora.pro/space/{file_path.split('/')[-1]}")
+        return send_image(
+            channel,
+            phone_number,
+            message,
+            public_url or f"https://img.monitora.pro/space/{file_path.split('/')[-1]}",
+        )
 
     finally:
-        MessageWpp(data, phone_number, channel, wamid=wamid, status="sent")
+        if data:
+            if public_url:
+                data["media_public_url"] = public_url
+            MessageWpp(data, phone_number, channel, wamid=wamid, status="sent")
 
 
 def send_audio(channel, phone_number, audio_url):
@@ -1147,9 +1163,10 @@ def send_image_by_bsuid(bsuid, channel, message, image_url):
             MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
 
 
-def send_image_upload_by_bsuid(bsuid, channel, message, file_path):
+def send_image_upload_by_bsuid(bsuid, channel, message, file_path, public_url=None):
     """Como send_image_upload, mas endereça pelo BSUID. Fallback pro link via
-    send_image_by_bsuid."""
+    send_image_by_bsuid. `public_url` é gravada em messages_wpp como
+    `media_public_url` (não vai pra Meta) pro chat exibir a imagem."""
     WAPP_NUMBER_ID = channel
     META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
     log.info(f"Uploading image to Meta (BSUID {bsuid}): {file_path}")
@@ -1169,7 +1186,10 @@ def send_image_upload_by_bsuid(bsuid, channel, message, file_path):
         if not media_id:
             log.error(f"Falha no upload da imagem: {upload_json}")
             return send_image_by_bsuid(
-                bsuid, channel, message, f"https://img.monitora.pro/space/{file_path.split('/')[-1]}"
+                bsuid,
+                channel,
+                message,
+                public_url or f"https://img.monitora.pro/space/{file_path.split('/')[-1]}",
             )
 
         msg_url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
@@ -1200,11 +1220,17 @@ def send_image_upload_by_bsuid(bsuid, channel, message, file_path):
             response=getattr(getattr(e, "response", None), "text", ""),
         )
         return send_image_by_bsuid(
-            bsuid, channel, message, f"https://img.monitora.pro/space/{file_path.split('/')[-1]}"
+            bsuid,
+            channel,
+            message,
+            public_url or f"https://img.monitora.pro/space/{file_path.split('/')[-1]}",
         )
 
     finally:
-        MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+        if data:
+            if public_url:
+                data["media_public_url"] = public_url
+            MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
 
 
 def send_audio_by_bsuid(bsuid, channel, audio_url):
