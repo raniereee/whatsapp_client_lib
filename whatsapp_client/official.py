@@ -1513,6 +1513,105 @@ def send_flow_template(
     return wamid
 
 
+def send_flow(
+    channel,
+    msisdn,
+    flow_id,
+    flow_token,
+    body_text,
+    cta_text,
+    screen=None,
+    flow_action_data=None,
+    header_text=None,
+    footer_text=None,
+):
+    """Abre um Flow na janela de 24h JÁ ABERTA (interactive type=flow).
+
+    Diferença para `send_flow_template`, que é o vizinho daqui: aquele manda o
+    Flow dentro de um TEMPLATE aprovado, porque o destinatário está frio. Este
+    responde a quem acabou de escrever — sem template, sem aprovação da Meta e
+    sem custo de conversa. É o caminho do BSA: o visitante abre a janela ao
+    mandar "REGISTRAR VISITA" lendo o QR do totem, e o Flow vai na resposta.
+
+    Args:
+        channel: phone_number_id da Meta
+        msisdn: telefone do destinatário (internacional, sem +)
+        flow_id: id do Flow PUBLICADO naquela WABA — o mesmo Flow tem id
+            diferente em cada WABA, então isto é dado de configuração, não
+            constante de código
+        flow_token: correlaciona a resposta (volta no nfm_reply)
+        body_text: o texto da mensagem que carrega o botão
+        cta_text: o rótulo do botão (limite de 20 chars da Meta)
+        screen: tela inicial. Omitido, o Flow abre na primeira
+        flow_action_data: dados injetados na tela (`${data.<key>}`) — é o que
+            permite a revisita chegar pré-preenchida, para a pessoa confirmar
+            em vez de digitar
+    """
+    channel = _resolve_channel(channel)
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    log.info(f"Sending flow {flow_id} to {msisdn}, token={flow_token}")
+
+    parameters = {
+        "flow_message_version": "3",
+        "flow_token": flow_token,
+        "flow_id": str(flow_id),
+        "flow_cta": (cta_text or "Abrir")[:20],
+    }
+    if screen:
+        parameters["flow_action"] = "navigate"
+        payload = {"screen": screen}
+        if flow_action_data:
+            payload["data"] = flow_action_data
+        parameters["flow_action_payload"] = payload
+
+    interactive = {
+        "type": "flow",
+        "body": {"text": body_text},
+        "action": {"name": "flow", "parameters": parameters},
+    }
+    if header_text:
+        interactive["header"] = {"type": "text", "text": header_text}
+    if footer_text:
+        interactive["footer"] = {"text": footer_text}
+
+    wamid = None
+    data = None
+    try:
+        url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": msisdn,
+            "type": "interactive",
+            "interactive": interactive,
+        }
+        HEADERS = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(url, headers=HEADERS, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+        if response_json.get("messages"):
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+    except Exception as e:
+        log.error(
+            "send_flow_error",
+            error=str(e),
+            phone=msisdn,
+            flow_id=flow_id,
+            flow_token=flow_token,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+        return None
+    finally:
+        if data:
+            MessageWpp(data, msisdn, channel, wamid=wamid, status="sent")
+    return wamid
+
+
 def send_video(channel, msisdn, media_id, caption="", public_url=None):
     """Envia um video ja carregado (media id) na janela de 24h ABERTA.
 
