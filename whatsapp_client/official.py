@@ -22,6 +22,9 @@ class Message:
     text = "1"
     chat_id = "(48) 98833-1991"
     channel = ""
+    # wamid DESTA mensagem (o `id` do webhook). É o alvo de uma reação nossa
+    # (send_reaction) — reagir exige o wamid da mensagem recebida.
+    wamid = None
     unique_id = None
     msg_type = None
     flow_token = None
@@ -55,7 +58,7 @@ def decode_msg(infos):
     # o número (`from`) vier ausente ou como BSUID. Fase 1.
     m.bsuid = infos.get("from_user_id")
     m.msg_type = infos.get("type")
-    waid = infos.get("id")
+    m.wamid = infos.get("id")
     if m.msg_type == "text":
         m.text = infos.get("text").get("body")
 
@@ -214,6 +217,81 @@ def mark_message_read(message_id, channel):
         response.raise_for_status()
     except Exception as e:
         log.error("mark_read_failed", error=str(e), message_id=message_id)
+
+
+def send_reaction(channel, phone_number, message_id, emoji):
+    """Reage com um emoji a uma mensagem RECEBIDA do usuário.
+
+    É o ACK mais barato que existe no WhatsApp: reação é o único tipo de
+    mensagem de serviço que a Meta não cobra desde 01/10/2026 — e, diferente
+    das outras, não consome a cota de 1.000 mensagens de serviço gratuitas por
+    número/mês. Onde a resposta do bot é só "recebi", reagir substitui uma
+    mensagem de texto cobrada.
+
+    `message_id` é o wamid da mensagem do usuário (`Message.wamid`). Emoji
+    vazio REMOVE a reação.
+
+    Retorna True quando a Meta aceitou o envio. O POST aceito não garante que
+    a reação apareça: mensagem com mais de 30 dias, apagada, ou que já é uma
+    reação falham DEPOIS, como erro 131009 no webhook de statuses. Então quem
+    depende do ACK tem que ter um texto de reserva para o False — e aceitar
+    que o 131009 passa calado.
+    """
+    channel = _resolve_channel(channel)
+    if not message_id:
+        # Sem wamid não há o que reagir: o chamador não tinha o id da
+        # mensagem recebida. Devolve False pra ele mandar o texto, em vez de
+        # gastar um POST que a Meta recusaria.
+        log.warning("send_reaction_sem_wamid", phone=phone_number, emoji=emoji)
+        return False
+
+    WAPP_NUMBER_ID = channel
+    META_API_KEY = config.APIS_AVAILABLE.get(channel, "")
+    log.info(f"Sending reaction {emoji} to {phone_number} on {message_id}")
+    wamid = None
+    data = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": phone_number,
+        "type": "reaction",
+        "reaction": {
+            "message_id": message_id,
+            "emoji": emoji,
+        },
+    }
+    ok = False
+    try:
+        url = f"{config.META_BASE_URL}/{WAPP_NUMBER_ID}/messages"
+        HEADERS = {
+            "Authorization": f"Bearer {META_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(url, headers=HEADERS, json=data)
+        response.raise_for_status()
+        response_json = response.json()
+
+        if "messages" in response_json and len(response_json["messages"]) > 0:
+            wamid = response_json["messages"][0].get("id")
+            data["id"] = wamid
+        ok = True
+
+    except Exception as e:
+        log.error(
+            "send_reaction_error",
+            error=str(e),
+            phone=phone_number,
+            emoji=emoji,
+            message_id=message_id,
+            response=getattr(getattr(e, "response", None), "text", ""),
+        )
+
+    finally:
+        # Grava como as outras mensagens: reação tem wamid e webhook de status
+        # próprios, então é mensagem — ao contrário do mark_message_read, que
+        # é só uma ação de leitura.
+        MessageWpp(data, phone_number, channel, wamid=wamid, status="sent")
+
+    return ok
 
 
 def send_location(channel, phone_number, latitude, longitude, name, address):
