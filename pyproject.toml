@@ -4,12 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "whatsapp-client"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cliente WhatsApp Business (Graph API da Meta) — transport puro, extraído do backend_whatsapp Z1"
 requires-python = ">=3.10"
 dependencies = [
     "requests>=2.32.0",
     "structlog>=23.0.0",
+    # meta_http: novas tentativas quando a conexão com a Meta nem abre
+    # (rede da Hostinger perdendo conexões de saída, 29/10/2026).
+    "tenacity>=9.0.0",
 ]
 
 # Peer dependency (NÃO listada em dependencies de propósito): a lib usa

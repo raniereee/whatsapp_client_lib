@@ -1,7 +1,6 @@
-import requests
 import uuid
 import structlog
-from whatsapp_client import config
+from whatsapp_client import config, meta_http
 from z1monitoring_models.models.messages import MessageWpp
 from z1monitoring_models.models.waid_messageid_rel import TemplateMessageIdRel
 
@@ -187,7 +186,7 @@ def send_typing_indicator(message_id, channel):
         "Content-Type": "application/json",
     }
     try:
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post_idempotente(url, headers=HEADERS, json=data)
         response.raise_for_status()
     except Exception as e:
         log.error("typing_indicator_failed", error=str(e), message_id=message_id)
@@ -213,7 +212,7 @@ def mark_message_read(message_id, channel):
     # cheia de payloads de read (sem texto). O read dos nossos envios já é
     # rastreado pelo webhook de statuses → MessageWpp.update_status_by_wamid.
     try:
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post_idempotente(url, headers=HEADERS, json=data)
         response.raise_for_status()
     except Exception as e:
         log.error("mark_read_failed", error=str(e), message_id=message_id)
@@ -266,7 +265,7 @@ def send_reaction(channel, phone_number, message_id, emoji):
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -317,7 +316,7 @@ def send_location(channel, phone_number, latitude, longitude, name, address):
     }
     wamid = None
     try:
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -347,7 +346,7 @@ def retrieve_media(channel, media_id):
         "Authorization": f"Bearer {META_API_KEY}",
     }
     try:
-        response = requests.get(url, headers=HEADERS)
+        response = meta_http.get(url, headers=HEADERS, timeout=(meta_http.TIMEOUT_S, 30))
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -368,7 +367,7 @@ def media_download(channel, url):
     }
 
     try:
-        response = requests.get(url, headers=HEADERS)
+        response = meta_http.get(url, headers=HEADERS, timeout=(meta_http.TIMEOUT_S, 30))
         response.raise_for_status()
         return response.content
     except Exception as e:
@@ -397,7 +396,7 @@ def location_request(channel, phone_number, msg):
             "Content-Type": "application/json",
         }
 
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
 
     except Exception as e:
@@ -457,7 +456,7 @@ def send_buttons(channel, phone_number, message, buttons, footer_text="Escolha u
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -534,7 +533,7 @@ def send_list(
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -576,7 +575,7 @@ def send_text_message(phone_number, channel, message):
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -626,7 +625,7 @@ def send_text_message_by_bsuid(bsuid, channel, message):
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -701,7 +700,7 @@ def send_template_by_bsuid(bsuid, channel, template_id, values, messageid=None, 
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -770,7 +769,7 @@ def send_buttons_by_bsuid(bsuid, channel, message, buttons, footer_text="Escolha
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -810,7 +809,7 @@ def send_image(channel, phone_number, message, image_url):
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -861,7 +860,7 @@ def send_image_upload(channel, phone_number, message, file_path, public_url=None
                 "messaging_product": "whatsapp",
                 "type": "image/png",
             }
-            upload_response = requests.post(upload_url, headers=headers, files=files, data=form_data)
+            upload_response = meta_http.post_idempotente(upload_url, headers=headers, files=files, data=form_data, timeout=(meta_http.TIMEOUT_S, 60))
             upload_response.raise_for_status()
             upload_json = upload_response.json()
 
@@ -889,7 +888,7 @@ def send_image_upload(channel, phone_number, message, file_path, public_url=None
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(msg_url, headers=headers, json=data)
+        response = meta_http.post(msg_url, headers=headers, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -938,7 +937,7 @@ def send_audio(channel, phone_number, audio_url):
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -982,7 +981,7 @@ def send_document(channel, phone_number, message, document_url):
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -1032,7 +1031,7 @@ def send_document_upload(channel, phone_number, message, file_path, mime="applic
                 "messaging_product": "whatsapp",
                 "type": mime,
             }
-            upload_response = requests.post(upload_url, headers=headers, files=files, data=form_data)
+            upload_response = meta_http.post_idempotente(upload_url, headers=headers, files=files, data=form_data, timeout=(meta_http.TIMEOUT_S, 60))
             upload_response.raise_for_status()
             upload_json = upload_response.json()
 
@@ -1054,7 +1053,7 @@ def send_document_upload(channel, phone_number, message, file_path, mime="applic
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(msg_url, headers=headers, json=data)
+        response = meta_http.post(msg_url, headers=headers, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -1102,7 +1101,7 @@ def send_contacts(channel, phone_number, contacts):
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -1179,7 +1178,7 @@ def send_list_by_bsuid(
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -1220,7 +1219,7 @@ def send_image_by_bsuid(bsuid, channel, message, image_url):
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -1256,7 +1255,7 @@ def send_image_upload_by_bsuid(bsuid, channel, message, file_path, public_url=No
         with open(file_path, "rb") as f:
             files = {"file": (file_path.split("/")[-1], f, "image/png")}
             form_data = {"messaging_product": "whatsapp", "type": "image/png"}
-            upload_response = requests.post(upload_url, headers=headers, files=files, data=form_data)
+            upload_response = meta_http.post_idempotente(upload_url, headers=headers, files=files, data=form_data, timeout=(meta_http.TIMEOUT_S, 60))
             upload_response.raise_for_status()
             upload_json = upload_response.json()
 
@@ -1282,7 +1281,7 @@ def send_image_upload_by_bsuid(bsuid, channel, message, file_path, public_url=No
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(msg_url, headers=headers, json=data)
+        response = meta_http.post(msg_url, headers=headers, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -1331,7 +1330,7 @@ def send_audio_by_bsuid(bsuid, channel, audio_url):
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -1377,7 +1376,7 @@ def send_document_by_bsuid(bsuid, channel, message, document_url):
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -1412,7 +1411,7 @@ def send_document_upload_by_bsuid(bsuid, channel, message, file_path, mime="appl
         with open(file_path, "rb") as f:
             files = {"file": (file_name, f, mime)}
             form_data = {"messaging_product": "whatsapp", "type": mime}
-            upload_response = requests.post(upload_url, headers=headers, files=files, data=form_data)
+            upload_response = meta_http.post_idempotente(upload_url, headers=headers, files=files, data=form_data, timeout=(meta_http.TIMEOUT_S, 60))
             upload_response.raise_for_status()
             upload_json = upload_response.json()
 
@@ -1433,7 +1432,7 @@ def send_document_upload_by_bsuid(bsuid, channel, message, file_path, mime="appl
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(msg_url, headers=headers, json=data)
+        response = meta_http.post(msg_url, headers=headers, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -1473,7 +1472,7 @@ def send_contacts_by_bsuid(bsuid, channel, contacts):
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
@@ -1569,7 +1568,7 @@ def send_flow_template(
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
         if "messages" in response_json and len(response_json["messages"]) > 0:
@@ -1668,7 +1667,7 @@ def send_flow(
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
         if response_json.get("messages"):
@@ -1721,7 +1720,7 @@ def send_video(channel, msisdn, media_id, caption="", public_url=None):
         if public_url:
             # Fora do payload da Meta, dentro do content que gravamos.
             data["media_public_url"] = public_url
-        response = requests.post(
+        response = meta_http.post(
             url,
             headers={"Authorization": f"Bearer {META_API_KEY}",
                      "Content-Type": "application/json"},
@@ -1762,12 +1761,12 @@ def upload_media(channel, caminho, mime_type="video/mp4"):
     try:
         url = f"{config.META_BASE_URL}/{channel}/media"
         with open(caminho, "rb") as f:
-            response = requests.post(
+            response = meta_http.post_idempotente(
                 url,
                 headers={"Authorization": f"Bearer {META_API_KEY}"},
                 data={"messaging_product": "whatsapp", "type": mime_type},
                 files={"file": (os.path.basename(caminho), f, mime_type)},
-                timeout=300,
+                timeout=(meta_http.TIMEOUT_S, 300),
             )
         response.raise_for_status()
         media_id = response.json().get("id")
@@ -1806,7 +1805,7 @@ def send_template(channel, msisdn, template_id, values, messageid=None, header_i
             "Authorization": f"Bearer {META_API_KEY}",
             "Content-Type": "application/json",
         }
-        response = requests.post(url, headers=HEADERS, json=data)
+        response = meta_http.post(url, headers=HEADERS, json=data)
         response.raise_for_status()
         response_json = response.json()
 
