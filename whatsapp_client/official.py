@@ -43,6 +43,10 @@ class Message:
     sticker_animated = False
     reaction_emoji = None
     reacted_wamid = None
+    # wamid da mensagem NOSSA que esta responde (context.id do webhook): vem
+    # em clique de botão/lista e em resposta citada. É o que amarra um clique
+    # à pergunta exata que o ofereceu, mesmo com outras mensagens no meio.
+    replied_wamid = None
     latitude = None
     longitude = None
     location_name = None
@@ -58,6 +62,7 @@ def decode_msg(infos):
     m.bsuid = infos.get("from_user_id")
     m.msg_type = infos.get("type")
     m.wamid = infos.get("id")
+    m.replied_wamid = (infos.get("context") or {}).get("id")
     if m.msg_type == "text":
         m.text = infos.get("text").get("body")
 
@@ -476,6 +481,10 @@ def send_buttons(channel, phone_number, message, buttons, footer_text="Escolha u
         if data:
             MessageWpp(data, phone_number, channel, wamid=wamid, status="sent")
 
+    # Quem enviou uma pergunta com botões precisa do wamid para reconhecer o
+    # clique depois (Message.replied_wamid). None quando o envio falhou.
+    return wamid
+
 
 def send_list(
     channel,
@@ -788,6 +797,8 @@ def send_buttons_by_bsuid(bsuid, channel, message, buttons, footer_text="Escolha
     finally:
         if data:
             MessageWpp(data, bsuid, channel, wamid=wamid, status="sent")
+
+    return wamid
 
 
 def send_image(channel, phone_number, message, image_url):
