@@ -172,3 +172,81 @@ def get_template(channel: str, waba_id: str, name: str, language: str) -> Option
         if template.get("name") == name and template.get("language") == language:
             return template
     return None
+
+
+class TemplateResult(NamedTuple):
+    """Resposta da Meta ao criar/apagar template."""
+
+    ok: bool
+    template_id: Optional[str] = None
+    status: Optional[str] = None  # PENDING / APPROVED / REJECTED na criação
+    error_code: Optional[int] = None
+    error_detail: str = ""
+
+
+def _template_error(response) -> TemplateResult:
+    """A Meta põe a explicação legível em error_user_msg (ex.: "o corpo não
+    pode começar com variável"); o `message` é genérico."""
+    error = _json(response).get("error") or {}
+    code = error.get("code")
+    detail = " — ".join(
+        p for p in (error.get("error_user_title"), error.get("error_user_msg")) if p
+    ) or error.get("message") or response.text[:300]
+    return TemplateResult(ok=False, error_code=code if isinstance(code, int) else None, error_detail=detail)
+
+
+def create_template(channel: str, waba_id: str, template: dict) -> TemplateResult:
+    """Submete o template (name, language, category, components) para
+    aprovação. Criar NÃO é idempotente: só repete se a conexão nem abriu."""
+    try:
+        response = meta_http.post(_url(f"{waba_id}/message_templates"), headers=_auth(channel), json=template)
+    except requests.RequestException as e:
+        log.error("transport.create_template_no_response", name=template.get("name"), error=str(e))
+        return TemplateResult(ok=False, error_detail="sem resposta da Meta")
+    if not response.ok:
+        result = _template_error(response)
+        log.warning("transport.create_template_refused", name=template.get("name"), detail=result.error_detail)
+        return result
+    data = _json(response)
+    return TemplateResult(ok=True, template_id=data.get("id"), status=data.get("status"))
+
+
+def delete_template(channel: str, waba_id: str, name: str, template_id: Optional[str] = None) -> TemplateResult:
+    """Apaga o template. Com `template_id`, só aquele idioma; sem, todos os
+    idiomas do nome. A Meta bloqueia recriar o mesmo nome por ~4 semanas."""
+    params = {"name": name}
+    if template_id:
+        params["hsm_id"] = template_id
+    try:
+        response = meta_http.delete(_url(f"{waba_id}/message_templates"), headers=_auth(channel), params=params)
+    except requests.RequestException as e:
+        log.error("transport.delete_template_no_response", name=name, error=str(e))
+        return TemplateResult(ok=False, error_detail="sem resposta da Meta")
+    if not response.ok:
+        return _template_error(response)
+    return TemplateResult(ok=bool(_json(response).get("success")))
+
+
+def upload_template_example(channel: str, app_id: str, content: bytes, mime: str) -> Optional[str]:
+    """Sobe o arquivo de EXEMPLO de um cabeçalho de mídia (Resumable Upload
+    API) e devolve o `header_handle`. Serve só para a revisão da Meta: o
+    arquivo de verdade vai em cada envio. `app_id` tem de ser o app dono do
+    token do canal."""
+    token = _token(channel)
+    try:
+        session = meta_http.post(
+            _url(f"{app_id}/uploads"),
+            params={"file_length": len(content), "file_type": mime, "access_token": token},
+        )
+        session.raise_for_status()
+        upload = meta_http.post(
+            _url(_json(session)["id"]),
+            headers={"Authorization": f"OAuth {token}", "file_offset": "0"},
+            data=content,
+            timeout=(meta_http.TIMEOUT_S, 60),
+        )
+        upload.raise_for_status()
+        return _json(upload).get("h")
+    except (requests.RequestException, KeyError) as e:
+        log.error("transport.upload_example_failed", app_id=app_id, error=str(e))
+        return None

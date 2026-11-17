@@ -73,3 +73,33 @@ def test_template_pelo_nome_exato_e_idioma_paginando():
 def test_listar_templates_falha_devolve_none():
     with patch("whatsapp_client.transport.meta_http.get", return_value=_resposta(500, {})):
         assert transport.list_templates("PN", "WABA") is None
+
+
+def test_criar_template_aceito():
+    with patch("whatsapp_client.transport.meta_http.post", return_value=_resposta(200, {"id": "T1", "status": "PENDING", "category": "UTILITY"})):
+        r = transport.create_template("PN", "WABA", {"name": "x"})
+    assert (r.ok, r.template_id, r.status) == (True, "T1", "PENDING")
+
+
+def test_criar_template_recusado_traz_a_frase_legivel():
+    erro = {"error": {"code": 100, "message": "Invalid parameter", "error_user_title": "Variável no início", "error_user_msg": "O corpo não pode começar com variável."}}
+    with patch("whatsapp_client.transport.meta_http.post", return_value=_resposta(400, erro)):
+        r = transport.create_template("PN", "WABA", {"name": "x"})
+    assert not r.ok
+    assert r.error_detail == "Variável no início — O corpo não pode começar com variável."
+
+
+def test_apagar_template_por_id():
+    with patch("whatsapp_client.transport.meta_http.delete", return_value=_resposta(200, {"success": True})) as delete:
+        assert transport.delete_template("PN", "WABA", "cobranca", "T1").ok
+    assert delete.call_args.kwargs["params"] == {"name": "cobranca", "hsm_id": "T1"}
+
+
+def test_exemplo_do_cabecalho_em_dois_passos():
+    sessao = _resposta(200, {"id": "upload:ABC"})
+    envio = _resposta(200, {"h": "HANDLE"})
+    with patch("whatsapp_client.transport.meta_http.post", side_effect=[sessao, envio]) as post:
+        assert transport.upload_template_example("PN", "APP", b"%PDF", "application/pdf") == "HANDLE"
+    assert post.call_args_list[0].args[0] == "https://graph.test/v23.0/APP/uploads"
+    assert post.call_args_list[1].args[0] == "https://graph.test/v23.0/upload:ABC"
+    assert post.call_args_list[1].kwargs["headers"]["Authorization"] == "OAuth TOKEN"
