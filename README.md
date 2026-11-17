@@ -56,3 +56,25 @@ depois do import sem problema.
 > Persistência (`MessageWpp`/`TemplateMessageIdRel`) ainda acopla a lib ao schema
 > Z1. Evolução futura: hook de persistência injetável para tornar a lib agnóstica
 > de banco.
+
+## Transporte puro (`transport`)
+
+`official` grava todo envio em `messages_wpp` (histórico do bot) e não devolve
+nada. Para quem tem histórico próprio, `transport` só fala com a Meta e
+**devolve a resposta** — nada de banco:
+
+```python
+from whatsapp_client import transport
+
+r = transport.send_payload(phone_number_id, {"to": "5549...", "type": "text", "text": {"body": "oi"}})
+r.ok, r.wamid, r.wa_id          # wa_id = número real (nono dígito)
+r.error_code == transport.OUTSIDE_WINDOW   # 131047: fora das 24h, só template
+
+transport.upload_media(phone_number_id, conteudo, "application/pdf", "boleto.pdf")  # -> media_id
+transport.download_media(phone_number_id, media_id)        # -> Media(content, mime)
+transport.mark_read(phone_number_id, wamid)
+transport.get_template(phone_number_id, waba_id, "cobranca", "pt_BR")
+```
+
+Usado pelo chat do Financeiro (`backend_billing`). Testes em `tests/`
+(`pytest`).
